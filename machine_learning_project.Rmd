@@ -1,0 +1,236 @@
+---
+title: "Machine_Learning_Project"
+output: html_document
+date: "2025-07-19"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Load libraries and data
+```{r,  message=FALSE, warning=FALSE}
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(patchwork)
+
+training = read.csv("pml-training.csv")
+testing = read.csv("pml-testing.csv")
+```
+
+
+## Explorative analysis
+### Identifying exercise repetitions
+#### In this section we plot different sensor data to gain an understanding of the data.
+#### How to identify a single exercise repetition etc.
+#### Also we compare sensor data of different classes to identify possible relevent sensors for identifying the classes
+####
+```{r, echo=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+filtered_data <- training %>%
+  filter(user_name == "adelmo", classe == "A")
+
+
+p1 <- ggplot(filtered_data, aes(x = 1:nrow(filtered_data), y = accel_arm_y)) +
+  geom_line(color = "blue") +
+  labs(title = "Acceleration of the upper arm on the Y-axis", x = "Index", y = "Acceleration")
+
+p2 <- ggplot(filtered_data, aes(x = 1:nrow(filtered_data), y = accel_arm_z)) +
+  geom_line(color = "blue") +
+  labs(title = "Acceleration of the upper arm on the Z-axis", x = "Index", y = "Acceleration")
+  
+p3 <- ggplot(filtered_data, aes(x = 1:nrow(filtered_data), y = accel_forearm_y)) +
+  geom_line(color = "blue") +
+  labs(title = "Acceleration of the forearm on the Y-axis", x = "Index", y = "Acceleration")
+
+p1 / p2 / p3
+
+```
+
+#### You can see the exercises repetitions pretty clearly in all of the plots.
+
+
+
+### Identifying valuable features
+#### Next we want to look for features which help us to identify classes
+#### Therefore we visually compare the same sensor data for two different classes
+```{r, echo=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+shifted_data <- training %>%
+  filter(user_name == "adelmo", classe %in% c("A", "D")) %>%
+  group_by(classe) %>%
+  mutate(index = row_number()) %>%
+  ungroup() %>%
+  # Apply lag
+  mutate(index = ifelse(classe == "D", index + 400, index))
+
+ggplot(shifted_data, aes(x = index, y = accel_dumbbell_z, color = classe)) +
+  geom_line(alpha = 0.9) +
+  scale_color_manual(values = c("A" = "blue", "D" = "red")) +
+  labs(title = "Comparison of Class A vs D (with Lag on D)",
+       x = "Aligned Index",
+       y = "Acceleration Dumbbell Z") +
+  theme_minimal()
+
+```
+
+The participant is producing stronger acceleration variance on the Z-axis with the dumbbell.
+This sensor data can be used to distinguish exercise A and D. 
+
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+shifted_data <- training %>%
+  filter(user_name == "adelmo", classe %in% c("A", "B")) %>%
+  group_by(classe) %>%
+  mutate(index = row_number()) %>%
+  ungroup() %>%
+  mutate(index = ifelse(classe == "B", index + 400, index))
+
+ggplot(shifted_data, aes(x = index, y = accel_arm_z, color = classe)) +
+  geom_line(alpha = 0.9) +
+  scale_color_manual(values = c("A" = "blue", "B" = "red")) +
+  labs(title = "Comparison of Class A vs B (with Lag on B)",
+       x = "Aligned Index",
+       y = "Acceleration Upper Arm Z") +
+  theme_minimal()
+
+```
+
+The participant is producing stronger acceleration variance on the Z-axis with his upper arm.
+This sensor data can be used to distinguish exercise A and B. 
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+shifted_data <- training %>%
+  filter(user_name == "adelmo", classe %in% c("A", "C")) %>%
+  group_by(classe) %>%
+  mutate(index = row_number()) %>%
+  ungroup() %>%
+  # Apply lag
+  mutate(index = ifelse(classe == "C", index + 400, index))
+
+ggplot(shifted_data, aes(x = index, y = accel_forearm_y, color = classe)) +
+  geom_line(alpha = 0.9) +
+  scale_color_manual(values = c("A" = "blue", "C" = "red")) +
+  labs(title = "Comparison of Class A vs C (with Lag on C)",
+       x = "Aligned Index",
+       y = "Acceleration Forearm Y") +
+  theme_minimal()
+
+```
+
+The participant is producing stronger acceleration peaks on the Y-axis with his forearm.
+This sensor data can be used to distinguish exercise A and C. 
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+shifted_data <- training %>%
+  filter(user_name == "adelmo", classe %in% c("A", "E")) %>%
+  group_by(classe) %>%
+  mutate(index = row_number()) %>%
+  ungroup() %>%
+  # Apply lag
+  mutate(index = ifelse(classe == "E", index + 400, index))
+
+ggplot(shifted_data, aes(x = index, y = accel_belt_z, color = classe)) +
+  geom_line(alpha = 0.9) +
+  scale_color_manual(values = c("A" = "blue", "E" = "red")) +
+  labs(title = "Comparison of Class A vs E (with Lag on E)",
+       x = "Aligned Index",
+       y = "Acceleration Belt Z") +
+  theme_minimal()
+
+```
+
+The participant is producing stronger acceleration variance on the Z-axis with his belt.
+This sensor data can be used to distinguish exercise A and E.
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+#### Creating training and test data
+
+# Remove redundant columns
+cols_to_remove <- c(names(training)[c(1:7, 12:36, 50:59, 69:83, 87:100, 101:112, 125:139, 141:150)])
+
+training_filtered <- training %>%
+  select(-all_of(cols_to_remove))
+
+training_filtered$classe <- as.factor(training_filtered$classe)
+
+inTrain = createDataPartition(training_filtered$classe, p = 0.9)[[1]]
+train_data = training_filtered[ inTrain,]
+testing_data = training_filtered[-inTrain,]
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# Section to accelerate model training by doing parallel computing
+library(doParallel)
+cl <- makePSOCKcluster(16)  # Adjust to your CPU cores
+registerDoParallel(cl)
+
+#stopCluster(cl)
+```
+### Multinomial logistic regression
+```{r, echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+knitr::opts_chunk$set(echo = FALSE)
+
+train_control <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
+
+model_mn <- train(classe ~ ., data = train_data, method = "multinom", trControl = train_control)
+pred_mn <- predict(model_mn,newdata=testing_data)
+confusionMatrix(pred_mn , testing_data$classe)$overall["Accuracy"] # 65.5% Accuracy
+```
+### Random forest
+```{r, echo=TRUE, cache=TRUE}
+knitr::opts_chunk$set(echo = FALSE)
+
+model_rf <- train(classe ~ ., data = train_data, method = "rf", trControl = train_control)
+pred_rf <- predict(model_rf,newdata=testing_data)
+confusionMatrix(pred_rf , testing_data$classe)$overall["Accuracy"] # 99.4% Accuracy
+```
+### Gradient boosting
+```{r, echo=TRUE, cache=TRUE}
+knitr::opts_chunk$set(echo = FALSE)
+
+model_gbm <- train(classe ~ ., data = train_data, method = "gbm", trControl = train_control)
+pred_gbm <- predict(model_gbm,newdata=testing_data)
+confusionMatrix(pred_gbm , testing_data$classe)$overall["Accuracy"] # 96,3% Accuracy
+```
+### Linear discriminant analysis
+```{r, echo=TRUE, cache=TRUE}
+knitr::opts_chunk$set(echo = FALSE)
+
+model_lda <- train(classe ~ ., data = train_data, method = "lda", trControl = train_control)
+pred_lda <- predict(model_lda, newdata=testing_data)
+confusionMatrix(pred_lda , testing_data$classe)$overall["Accuracy"] # 68,3% Accuracy
+```
+### Final prediction for the testing data
+```{r, echo=TRUE, cache=TRUE}
+knitr::opts_chunk$set(echo = FALSE)
+
+pred_testing_rf <- predict(model_rf,newdata=testing)
+pred_testing_rf
+# returns: B A B A A E D B A A B C B A E E A B B B
+```
+
+```{r, echo=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# End parallel computing
+stopCluster(cl)
+```
+
+## Conclusion
+#### The best model for this dataset is Random Forest with an accuracy of ~99.7%.
+#### The predicted values for the test data are:
+#### B A B A A E D B A A B C B A E E A B B B
